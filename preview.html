@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Courier Link - Standalone Preview</title>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- React & Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind for rapid standalone styling (optional, but I'll use the CSS I wrote) -->
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --secondary: #ec4899;
+            --accent: #8b5cf6;
+            --bg-dark: #0f172a;
+            --bg-card: rgba(30, 41, 59, 0.7);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: rgba(255, 255, 255, 0.1);
+            --glass: rgba(255, 255, 255, 0.05);
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: var(--font-family);
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            line-height: 1.5;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+                        radial-gradient(circle at 100% 100%, rgba(236, 72, 153, 0.1) 0%, transparent 50%);
+            z-index: -1;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 1.5rem; }
+        .glass-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 2rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .btn { padding: 0.75rem 1.5rem; border-radius: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; border: none; transition: all 0.3s ease; font-family: inherit; }
+        .btn-primary { background: linear-gradient(135deg, var(--primary), var(--accent)); color: white; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(99, 102, 241, 0.3); }
+        .btn-outline { border: 1px solid var(--border); background: transparent; color: var(--text-main); }
+        .btn-outline:hover { background: var(--glass); }
+
+        .form-group { margin-bottom: 1.5rem; }
+        .form-input { width: 100%; padding: 0.75rem 1rem; border-radius: 12px; background: rgba(15, 23, 42, 0.5); border: 1px solid var(--border); color: var(--text-main); }
+        .form-input:focus { border-color: var(--primary); outline: none; }
+
+        .badge { padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; border: 1px solid transparent; }
+        .badge-pending { background: rgba(245, 158, 11, 0.1); color: var(--warning); border-color: rgba(245, 158, 11, 0.2); }
+        .badge-transit { background: rgba(99, 102, 241, 0.1); color: var(--primary); border-color: rgba(99, 102, 241, 0.2); }
+        .badge-delivered { background: rgba(16, 185, 129, 0.1); color: var(--success); border-color: rgba(16, 185, 129, 0.2); }
+
+        .text-gradient { background: linear-gradient(to right, var(--primary), var(--secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th { padding: 1rem 1.5rem; text-align: left; background: var(--glass); font-size: 0.75rem; color: var(--text-muted); }
+        td { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); }
+
+        .nav-link { color: var(--text-muted); text-decoration: none; font-weight: 500; }
+        .nav-link:hover { color: var(--text-main); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // --- Mock Router ---
+        const Router = ({ children }) => {
+            const [path, setPath] = useState(window.location.hash.replace('#', '') || '/');
+            useEffect(() => {
+                const handleHashChange = () => setPath(window.location.hash.replace('#', '') || '/');
+                window.addEventListener('hashchange', handleHashChange);
+                return () => window.removeEventListener('hashchange', handleHashChange);
+            }, []);
+            return children(path);
+        };
+
+        const Link = ({ to, children, className, style }) => (
+            <a href={`#${to}`} className={className} style={style}>{children}</a>
+        );
+
+        // --- Storage Logic ---
+        const KEY_PARCELS = 'courier_parcels';
+        const KEY_USERS = 'courier_users';
+        const KEY_CURRENT_USER = 'courier_current_user';
+
+        const storage = {
+            getUsers: () => JSON.parse(localStorage.getItem(KEY_USERS) || '[]'),
+            saveUser: (user) => {
+                const users = storage.getUsers();
+                users.push(user);
+                localStorage.setItem(KEY_USERS, JSON.stringify(users));
+            },
+            getCurrentUser: () => JSON.parse(localStorage.getItem(KEY_CURRENT_USER)),
+            setCurrentUser: (user) => localStorage.setItem(KEY_CURRENT_USER, JSON.stringify(user)),
+            logout: () => {
+                localStorage.removeItem(KEY_CURRENT_USER);
+                window.location.hash = '#/login';
+            },
+            getParcels: () => JSON.parse(localStorage.getItem(KEY_PARCELS) || '[]'),
+            addParcel: (parcel) => {
+                const parcels = storage.getParcels();
+                const newParcel = {
+                    ...parcel,
+                    id: 'TRK' + Math.random().toString(36).substr(2, 9).toUpperCase(),
+                    status: 'Pending',
+                    bookedAt: new Date().toISOString()
+                };
+                parcels.push(newParcel);
+                localStorage.setItem(KEY_PARCELS, JSON.stringify(parcels));
+                return newParcel;
+            },
+            updateParcelStatus: (id, status) => {
+                const parcels = storage.getParcels();
+                const idx = parcels.findIndex(p => p.id === id);
+                if (idx !== -1) {
+                    parcels[idx].status = status;
+                    localStorage.setItem(KEY_PARCELS, JSON.stringify(parcels));
+                }
+            }
+        };
+
+        // Init Admin
+        if (storage.getUsers().length === 0) {
+            storage.saveUser({ name: 'Admin', email: 'admin@courier.com', password: 'admin123', role: 'admin' });
+        }
+
+        // --- Components ---
+
+        const Navbar = ({ user }) => (
+            <nav style={{ background: 'var(--glass)', borderBottom: '1px solid var(--border)', padding: '1rem 0', marginBottom: '2rem' }}>
+                <div className="container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Link to="/" style={{ fontSize: '1.5rem', fontWeight: 800, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span className="text-gradient">CourierLink</span>
+                    </Link>
+                    <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+                        <Link to="/" className="nav-link">Home</Link>
+                        {user ? (
+                            <>
+                                <Link to={user.role === 'admin' ? '/admin' : '/dashboard'} className="nav-link">Dashboard</Link>
+                                <button onClick={() => storage.logout()} className="btn btn-outline" style={{ padding: '0.4rem 0.8rem' }}>Logout</button>
+                            </>
+                        ) : (
+                            <Link to="/login" className="btn btn-primary" style={{ padding: '0.4rem 1rem' }}>Login</Link>
+                        )}
+                    </div>
+                </div>
+            </nav>
+        );
+
+        const HomePage = () => {
+            const [tid, setTid] = useState('');
+            const [parcel, setParcel] = useState(null);
+            return (
+                <div className="container" style={{ textAlign: 'center', padding: '4rem 0' }}>
+                    <h1 style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>Fast & <span className="text-gradient">Secure</span> Shipping</h1>
+                    <p style={{ color: 'var(--text-muted)', marginBottom: '3rem' }}>The ultimate parcel management solution for your business.</p>
+                    
+                    <div className="glass-card" style={{ maxWidth: '600px', margin: '0 auto' }}>
+                        <h3 style={{ marginBottom: '1.5rem' }}>Track Your Parcel</h3>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <input className="form-input" placeholder="Tracking ID..." value={tid} onChange={e => setTid(e.target.value)} />
+                            <button className="btn btn-primary" onClick={() => setParcel(storage.getParcels().find(p => p.id === tid))}>Track</button>
+                        </div>
+                        {parcel && (
+                            <div style={{ marginTop: '2rem', textAlign: 'left', padding: '1rem', background: 'var(--glass)', borderRadius: '12px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                                    <strong>{parcel.id}</strong>
+                                    <span className={`badge badge-${parcel.status.toLowerCase().replace(' ', '')}`}>{parcel.status}</span>
+                                </div>
+                                <p>Receiver: {parcel.receiverName}</p>
+                                <p>Destination: {parcel.destination}</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const LoginPage = () => {
+            const [email, setEmail] = useState('');
+            const [pass, setPass] = useState('');
+            const handleLogin = () => {
+                const u = storage.getUsers().find(x => x.email === email && x.password === pass);
+                if (u) {
+                    storage.setCurrentUser(u);
+                    window.location.hash = u.role === 'admin' ? '#/admin' : '#/dashboard';
+                } else alert('Invalid credentials');
+            };
+            return (
+                <div className="container" style={{ display: 'flex', justifyContent: 'center', padding: '4rem 0' }}>
+                    <div className="glass-card" style={{ width: '400px' }}>
+                        <h2 style={{ textAlign: 'center', marginBottom: '2rem' }}>Login</h2>
+                        <div className="form-group">
+                            <label>Email</label>
+                            <input className="form-input" value={email} onChange={e => setEmail(e.target.value)} />
+                        </div>
+                        <div className="form-group">
+                            <label>Password</label>
+                            <input type="password" className="form-input" value={pass} onChange={e => setPass(e.target.value)} />
+                        </div>
+                        <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={handleLogin}>Login</button>
+                        <p style={{ textAlign: 'center', marginTop: '1.5rem', color: 'var(--text-muted)' }}>
+                            Don't have an account? <Link to="/register" style={{ color: 'var(--primary)', fontWeight: 600 }}>Create one</Link>
+                        </p>
+                        <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Admin: admin@courier.com / admin123</p>
+                    </div>
+                </div>
+            );
+        };
+
+        const RegisterPage = () => {
+            const [form, setForm] = useState({ name: '', email: '', password: '' });
+            const handleRegister = () => {
+                storage.saveUser({ ...form, role: 'customer' });
+                window.location.hash = '#/login';
+            };
+            return (
+                <div className="container" style={{ display: 'flex', justifyContent: 'center', padding: '4rem 0' }}>
+                    <div className="glass-card" style={{ width: '400px' }}>
+                        <h2 style={{ textAlign: 'center', marginBottom: '2rem' }}>Create Account</h2>
+                        <div className="form-group">
+                            <label>Full Name</label>
+                            <input className="form-input" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+                        </div>
+                        <div className="form-group">
+                            <label>Email</label>
+                            <input className="form-input" value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
+                        </div>
+                        <div className="form-group">
+                            <label>Password</label>
+                            <input type="password" className="form-input" value={form.password} onChange={e => setForm({...form, password: e.target.value})} />
+                        </div>
+                        <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={handleRegister}>Register</button>
+                        <p style={{ textAlign: 'center', marginTop: '1rem' }}>
+                            <Link to="/login" style={{ color: 'var(--primary)' }}>Already have an account? Login</Link>
+                        </p>
+                    </div>
+                </div>
+            );
+        };
+
+        const Dashboard = ({ user }) => {
+            const [parcels, setParcels] = useState(storage.getParcels().filter(p => p.senderEmail === user.email));
+            const [modal, setModal] = useState(false);
+            const [form, setForm] = useState({ name: '', destination: '', weight: '' });
+            
+            const book = () => {
+                const cost = 10 + (parseFloat(form.weight) * 5);
+                const p = storage.addParcel({ ...form, receiverName: form.name, destination: form.destination, weight: form.weight, senderEmail: user.email, cost });
+                setParcels([...parcels, p]);
+                setModal(false);
+            };
+
+            return (
+                <div className="container">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem' }}>
+                        <h2>My Shipments</h2>
+                        <button className="btn btn-primary" onClick={() => setModal(true)}>Book Parcel</button>
+                    </div>
+                    <div className="glass-card" style={{ padding: 0 }}>
+                        <table>
+                            <thead>
+                                <tr><th>ID</th><th>RECEIVER</th><th>DESTINATION</th><th>STATUS</th></tr>
+                            </thead>
+                            <tbody>
+                                {parcels.map(p => (
+                                    <tr key={p.id}>
+                                        <td>{p.id}</td><td>{p.receiverName}</td><td>{p.destination}</td>
+                                        <td><span className={`badge badge-${p.status.toLowerCase().replace(' ', '')}`}>{p.status}</span></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    {modal && (
+                        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                            <div className="glass-card" style={{ width: '400px' }}>
+                                <h3>Book Shipment</h3>
+                                <div className="form-group"><label>Receiver Name</label><input className="form-input" onChange={e => setForm({...form, name: e.target.value})} /></div>
+                                <div className="form-group"><label>Destination</label><input className="form-input" onChange={e => setForm({...form, destination: e.target.value})} /></div>
+                                <div className="form-group"><label>Weight (kg)</label><input type="number" className="form-input" onChange={e => setForm({...form, weight: e.target.value})} /></div>
+                                <button className="btn btn-primary" style={{ width: '100%' }} onClick={book}>Confirm</button>
+                                <button className="btn btn-outline" style={{ width: '100%', marginTop: '0.5rem' }} onClick={() => setModal(false)}>Cancel</button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const AdminPage = () => {
+            const [parcels, setParcels] = useState(storage.getParcels());
+            const updateStatus = (id, s) => {
+                storage.updateParcelStatus(id, s);
+                setParcels(storage.getParcels());
+            };
+            return (
+                <div className="container">
+                    <h2>Admin Management</h2>
+                    <div className="glass-card" style={{ padding: 0, marginTop: '2rem' }}>
+                        <table>
+                            <thead>
+                                <tr><th>ID</th><th>RECEIVER</th><th>STATUS</th><th>ACTION</th></tr>
+                            </thead>
+                            <tbody>
+                                {parcels.map(p => (
+                                    <tr key={p.id}>
+                                        <td>{p.id}</td><td>{p.receiverName}</td>
+                                        <td><span className={`badge badge-${p.status.toLowerCase().replace(' ', '')}`}>{p.status}</span></td>
+                                        <td>
+                                            <select className="form-input" style={{ width: 'auto' }} onChange={e => updateStatus(p.id, e.target.value)} value={p.status}>
+                                                <option>Pending</option>
+                                                <option>In Transit</option>
+                                                <option>Delivered</option>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Main App ---
+        const App = () => (
+            <Router>
+                {(path) => {
+                    const user = storage.getCurrentUser();
+                    let content;
+                    if (path === '/') content = <HomePage />;
+                    else if (path === '/login') content = <LoginPage />;
+                    else if (path === '/register') content = <RegisterPage />;
+                    else if (path === '/dashboard') content = user ? <Dashboard user={user} /> : <LoginPage />;
+                    else if (path === '/admin') content = (user && user.role === 'admin') ? <AdminPage /> : <LoginPage />;
+                    else content = <HomePage />;
+
+                    return (
+                        <div>
+                            <Navbar user={user} />
+                            {content}
+                        </div>
+                    );
+                }}
+            </Router>
+        );
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
